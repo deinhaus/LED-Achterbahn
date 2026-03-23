@@ -4,18 +4,12 @@ Maker Media GmbH
 
 ***
 
-# Projektname
+# LED-Achterbahn
 
-## Erklärende Unterzeile (optional)
+**Aus einem LED-Streifen, etwas Physik und einem ESP32 entsteht eine LED-Achterbahn, bei der das Licht wie ein echter Wagen durch Loopings und Kurven rauscht. Und das zugehörige Baukastensystem macht individuelle Streckendesigns zum Kinderspiel – ganz ohne Kleben, Schrauben oder manuelle Code-Anpassungen.**
 
-**Vorspann aus dem Heft**
+![Aufmacherbild aus dem Heft](./doc/ledAchterbahn_github.JPG)
 
-![Aufmacherbild aus dem Heft](./doc/Aufmacher.JPG)
+Hier findet ihr die Daten für den 3D-Druck und den Arduino-Code.
 
-## Wer den Aufmacher skalieren muss:
-<img src="./doc/Aufmacher.JPG" width="50%" height="50%">
-
-Hier gibt es !!! ein Template für die README.md in Github. Das Aufmacherbild sowie weitere Doku soll in den Ordner _doc_. Bitte für andere Dateien sinnvolle Ordner anlegen, etwa _src_ oder _cad_.
-ISSUES UND WIKI DEAKTIVIEREN NICHT VERGESSEN.
-
-Der vollständige Artikel zum Projekt steht in der **[Make-Ausgabe x/yy ab Seite z](https://www.heise.de/select/make/xxx)**.
+Der vollständige Artikel zum Projekt steht in der **[Make-Ausgabe 2/26](https://www.heise.de/select/make/2026/2)**.
