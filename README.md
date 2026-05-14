@@ -25,7 +25,7 @@ Der vollständige Artikel zum Projekt steht in der **[Make-Ausgabe 2/26](https:/
 ![Display](https://img.shields.io/badge/Display-SH1106-lightgrey)
 ![LEDs](https://img.shields.io/badge/LEDs-WS2812B-green)
 ![Status](https://img.shields.io/badge/Status-Active-success)
-![License](https://img.shields.io/badge/License-MIT-yellow)
+
 
 ---
 
