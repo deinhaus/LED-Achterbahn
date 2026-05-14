@@ -246,9 +246,3 @@ Funktionen:
 - `getSlotFilename()`
 
 ---
-
-# Lizenz
-Dieses Projekt ist ein Fork von  
-https://github.com/MakeMagazinDE/LED-Achterbahn  
-und steht ebenfalls unter der MIT‑Lizenz.
-
