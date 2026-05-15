@@ -18,8 +18,15 @@ Der vollständige Artikel zum Projekt steht in der **[Make-Ausgabe 2/26](https:/
 # Infos aus dem FORK
 
 ## geplante Features
-- Anzeige von G-Käften unter Telemetrie
 - Anbindung von DFPlayer für AudioEffekte
+
+## Hinweise zu G-Kräften in Telemetrie
+Die G-Kräfte glätten (Der Code-Fix)
+Da die Kurve in kleine lineare Stücke (Segmente) zerhackt wird, entstehen an den "Knickpunkten" zwischen den Segmenten oft winzige, aber extreme mathematische Spitzen in der Krümmung. Zudem ist ein echter Achterbahnzug lang und verteilt solche Spitzen.
+
+Ich habe einen Tiefpassfilter (Moving Average) in den Code eingebaut, der die G-Kräfte weichzeichnet, wie es die Dämpfung eines echten Zuges tun würde. Zusätzlich habe ich die Auflösung der Kurven erhöht (const int intSteps = 40;) um eine feinere Abstufung zu erreichen.
+
+Im Konfig-Menü ist jetzt ein Faktor konfigurierbar, der den angezeigten Wert n% abschwächt.
 
 # Rollercoaster LED‑Simulation  
 *Interaktive Achterbahn‑Physik auf einem ESP32 mit OLED‑Display und bis zu 1000 LEDs.*
@@ -118,13 +125,14 @@ Die komplette Steuerung erfolgt intuitiv über den **Drehencoder**:
 
 ### Das Hauptmenü
 - **ABSPIELEN:** Startet die Echtzeit-Simulation der aktuell geladenen Strecke.
-- **OPTIK:** Hier lassen sich visuelle Parameter anpassen:
+- **KONFIG:** Hier lassen sich visuelle Parameter anpassen:
   - Wagen- und Bahnfarbe (inkl. Speed-Map)
   - Helligkeit für Wagen, Bahn und Zonen (Lift, Brake, Booster)
   - Wagenlänge (Anzahl der LEDs)
   - Zonen-Effekte (Aus, Statisch, Lauflicht/Pulsieren)
   - OLED FPS und Display-Modus (Telemetrie vs. Kirmes)
-- **ELEMENTE:** Zugang zum Streckeneditor (Bearbeiten, Neu hinzufügen).
+  - Hilfparameter (G-Factor, MaxSpeed für color-speed-map)
+- **STRECKE ANPASSEN:** Zugang zum Streckeneditor (Bearbeiten, Neu hinzufügen).
 - **STRECKEN [Sx]:** Dateimanager. Zeigt den aktuell geladenen Slot (S1-S5) an.
 
 *Hinweis: Längere Menüs (wie z.B. bei der Element-Bearbeitung oder Optik) verfügen über einen **dynamischen Scroll-Viewport**, sodass immer 6-7 Zeilen sichtbar sind und der Cursor flüssig mitläuft.*
@@ -151,6 +159,7 @@ Während der Fahrt liefert das OLED-Display Live-Daten. Es gibt zwei Darstellung
 Liefert exakte Daten zur Physik-Engine:
 - **Pos:** Aktuelle LED-Position des Wagens / Gesamtlänge.
 - **Spd m/s:** Aktuelle Geschwindigkeit in Metern pro Sekunde, inkl. der **(max xx.x)** Anzeige für den bisherigen Top-Speed des Runs.
+- **G:** Aktuelle G-Kräfte inkl. der **(max xx.x/min xx.x)** Anzeige für den bisherigen Top-Wert des Runs.
 - **Status:** Zeigt an, ob der Wagen frei fährt (FREIE FAHRT), gebremst wird, auf dem Lift hängt oder geboostet wird.
 - **Ziele & Zonen:**
   - `AKTIV: Elem X (Typ)`: Wird angezeigt, solange sich der Wagen *physisch innerhalb* der Länge einer Zone (z.B. eines Lifts) befindet.

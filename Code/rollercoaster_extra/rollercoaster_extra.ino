@@ -51,6 +51,8 @@ Node currentNode = {};
 struct SegmentData {
   float distance;
   float acc;
+  float angle;      // Winkel des Segments
+  float curvature;  // Krümmung für G-Kraft (Zentripetalbeschleunigung)
 };
 
 SegmentData* segments = nullptr;
@@ -72,7 +74,8 @@ enum UI_STATE {
     ST_OPTICS_ZONE_BRIGHTNESS,
     ST_OPTICS_DISPLAY_MODE, 
     ST_OPTICS_DISPLAY_FPS,   
-    ST_OPTICS_MAX_SPEED,    
+    ST_OPTICS_MAX_SPEED, 
+    ST_OPTICS_GFORCE_SCALE, // NEU: G-Kraft Faktor im Menü   
     ST_OPTICS_ZONE_EFFECTS,
 
     ST_ELEMENTS_MENU,      
@@ -153,11 +156,14 @@ point2D p1; point2D c1; point2D c2; point2D p2;
 
 point2D* bezierPoints = nullptr;
 uint16_t bezierPointCount = 0;
-const int intSteps = 20; 
+const int intSteps = 40; // ERHÖHT für rundere Kurven (bessere G-Kraft-Berechnung)
 
 float pos = 0.0f;
 float vel = 0.0f;
-float maxReachedSpeed = 0.0f; // <-- NEU: Speichert die maximale erreichte Geschwindigkeit
+float maxReachedSpeed = 0.0f;
+float currentGForce = 1.0f;   
+float maxGForce = 1.0f;       
+float minGForce = 1.0f;       
 
 uint16_t startLedPos = 0;
 unsigned long lastTime = 0;
@@ -174,6 +180,7 @@ int zoneBrightness = 10;
 uint8_t displayMode = 0; 
 int displayFps = 4;        
 float colorMaxSpeed = 15.0f; 
+float gForceScale = 0.20f; // NEU: Skalierungsfaktor für G-Kräfte (Default 20%)
 uint8_t showZoneEffects = 2;
 
 const int NUM_COLORS = 9;
@@ -204,6 +211,7 @@ void drawCarLengthSelection();
 void drawDisplayModeSelection();
 void drawDisplayFpsSelection(); 
 void drawMaxSpeedSelection(); 
+void drawGForceScaleSelection(); // NEU
 void drawZoneEffectsSelection();
 void drawEditSelectNode();
 void drawEditNodeMenu();
@@ -468,7 +476,7 @@ void loop() {
     case ST_OPTICS_MENU:
       if (newPos != lastPos) {
         if (newPos < 0) { encoder.setPosition(0); newPos = 0; }
-        if (newPos >= 11) { encoder.setPosition(10); newPos = 10; }
+        if (newPos >= 12) { encoder.setPosition(11); newPos = 11; } 
         opticsMenuSelection = newPos; drawOpticsMenu(); lastPos = newPos;
       }
       if (isButtonPressed()) {
@@ -481,10 +489,20 @@ void loop() {
         else if (opticsMenuSelection == 6) { uiState = ST_OPTICS_DISPLAY_MODE; encoder.setPosition(displayMode); }
         else if (opticsMenuSelection == 7) { uiState = ST_OPTICS_DISPLAY_FPS; encoder.setPosition(displayFps); } 
         else if (opticsMenuSelection == 8) { uiState = ST_OPTICS_MAX_SPEED; encoder.setPosition((int)(colorMaxSpeed * 2.0f)); }
-        else if (opticsMenuSelection == 9) { uiState = ST_OPTICS_ZONE_EFFECTS; encoder.setPosition(showZoneEffects); }
-        else if (opticsMenuSelection == 10) { uiState = ST_MENU; encoder.setPosition(1); savePlayDataSlot(activeLoadedSlot); }
+        else if (opticsMenuSelection == 9) { uiState = ST_OPTICS_GFORCE_SCALE; encoder.setPosition((int)(gForceScale * 100.0f)); } 
+        else if (opticsMenuSelection == 10) { uiState = ST_OPTICS_ZONE_EFFECTS; encoder.setPosition(showZoneEffects); }
+        else if (opticsMenuSelection == 11) { uiState = ST_MENU; encoder.setPosition(1); savePlayDataSlot(activeLoadedSlot); }
         lastPos = -1;
       }
+      break;
+
+    case ST_OPTICS_GFORCE_SCALE:
+      if (newPos != lastPos) {
+        if (newPos < 1) { encoder.setPosition(1); newPos = 1; }
+        if (newPos > 100) { encoder.setPosition(100); newPos = 100; }
+        gForceScale = (float)newPos / 100.0f; drawGForceScaleSelection(); lastPos = newPos;
+      }
+      if (isButtonPressed()) { uiState = ST_OPTICS_MENU; encoder.setPosition(9); lastPos = -1; }
       break;
 
     case ST_OPTICS_CAR_COLOR:
@@ -574,7 +592,7 @@ void loop() {
         if (newPos > 2) { encoder.setPosition(2); newPos = 2; }
         showZoneEffects = newPos; drawZoneEffectsSelection(); lastPos = newPos;
       }
-      if (isButtonPressed()) { uiState = ST_OPTICS_MENU; encoder.setPosition(9); lastPos = -1; }
+      if (isButtonPressed()) { uiState = ST_OPTICS_MENU; encoder.setPosition(10); lastPos = -1; } 
       break;
 
     case ST_ELEMENTS_MENU:
@@ -1057,8 +1075,8 @@ uint32_t getSpeedColor(float currentVel, uint8_t bright) {
 void drawMainMenu() {
     display.clearDisplay(); display.setTextSize(1); display.setTextColor(SH110X_WHITE);
     display.setCursor(0, 5);  display.println(menuSelection == 0 ? "> ABSPIELEN" : "  ABSPIELEN");
-    display.setCursor(0, 20); display.println(menuSelection == 1 ? "> OPTIK" : "  OPTIK");
-    display.setCursor(0, 35); display.println(menuSelection == 2 ? "> ELEMENTE" : "  ELEMENTE");
+    display.setCursor(0, 20); display.println(menuSelection == 1 ? "> KONFIG" : "  KONFIG");
+    display.setCursor(0, 35); display.println(menuSelection == 2 ? "> STRECKE ANPASSEN" : "  STRECKE ANPASSEN");
     display.setCursor(0, 50); 
     display.print(menuSelection == 3 ? "> STRECKEN [S" : "  STRECKEN [S");
     display.print(activeLoadedSlot); display.println("]");
@@ -1100,7 +1118,7 @@ void drawFileDeleteConfirm() {
 }
 
 void drawOpticsMenu() {
-    const int TOTAL_OPTIONS = 11;
+    const int TOTAL_OPTIONS = 12; // NEU: Auf 12 erhöht
     const int VISIBLE_LINES = 7;
     const int LINE_HEIGHT = 8;
     const int START_Y = 9;
@@ -1117,7 +1135,7 @@ void drawOpticsMenu() {
     display.setTextSize(1);
     display.setTextColor(SH110X_WHITE);
     display.setCursor(0, 0);
-    display.println(F("-- OPTIK & DISPLAY --"));
+    display.println(F("-- KONFIG --"));
     
     for (int i = 0; i < VISIBLE_LINES; i++) {
         int idx = firstVisible + i;
@@ -1137,8 +1155,9 @@ void drawOpticsMenu() {
             case 6: display.print(F("Mode:    ")); display.println(displayMode == 0 ? "Tech" : "Kirmes"); break;
             case 7: display.print(F("OLED FPS:")); display.println(displayFps); break; 
             case 8: display.print(F("MaxSpd:  ")); display.println(colorMaxSpeed, 1); break;
-            case 9: display.print(F("Zonen:   ")); display.println(showZoneEffects == 0 ? "Aus" : (showZoneEffects == 1 ? "Statisch" : "Lauflicht")); break;
-            case 10: display.println(F("ZURUECK")); break;
+            case 9: display.print(F("G-Faktor:")); display.println(gForceScale, 2); break; // NEU
+            case 10: display.print(F("Zonen:   ")); display.println(showZoneEffects == 0 ? "Aus" : (showZoneEffects == 1 ? "Statisch" : "Lauflicht")); break;
+            case 11: display.println(F("ZURUECK")); break;
         }
     }
     display.display();
@@ -1184,6 +1203,15 @@ void drawMaxSpeedSelection() {
     display.display();
 }
 
+// NEU: Auswahlbildschirm für den G-Kraft Faktor
+void drawGForceScaleSelection() {
+    display.clearDisplay(); display.setTextSize(1); display.setTextColor(SH110X_WHITE);
+    display.setCursor(0, 0); display.println(F("G-KRAFT FAKTOR:"));
+    display.setTextSize(3); display.setCursor(20, 25);
+    display.print(gForceScale, 2);
+    display.display();
+}
+
 void drawZoneEffectsSelection() {
     display.clearDisplay(); display.setTextSize(1); display.setTextColor(SH110X_WHITE);
     display.setCursor(0, 0); display.println(F("ZONEN-DARSTELLUNG:"));
@@ -1196,9 +1224,9 @@ void drawZoneEffectsSelection() {
 
 void drawElementsMenu() {
   display.clearDisplay(); display.setTextSize(1); display.setTextColor(SH110X_WHITE);
-  display.setCursor(0, 0);  display.println(F("-- ELEMENTE --"));
-  display.setCursor(0, 18); display.println(elementsMenuSelection == 0 ? "> Bearbeiten" : "  Bearbeiten");
-  display.setCursor(0, 32); display.println(elementsMenuSelection == 1 ? "> Neu hinzufuegen" : "  Neu hinzufuegen");
+  display.setCursor(0, 0);  display.println(F("- STRECKE ANPASSEN -"));
+  display.setCursor(0, 18); display.println(elementsMenuSelection == 0 ? "> Punkt bearbeiten" : "  Punkt bearbeiten");
+  display.setCursor(0, 32); display.println(elementsMenuSelection == 1 ? "> Punkt hinzufuegen" : "  Punkt hinzufuegen");
   display.setCursor(0, 46); display.println(elementsMenuSelection == 2 ? "> ZURUECK" : "  ZURUECK");
   display.display();
 }
@@ -1216,12 +1244,11 @@ void drawSetupLeds() {
         if(nodes[i].art == 5) { r = 0; g = 100; b = 255; }      
         else if(nodes[i].art == 6) { r = 255; g = 50; b = 0; }  
         else if(nodes[i].art == 7) { r = 255; g = 255; b = 0; } 
-        else { r = 100; g = 0; b = 100; }                        
+        else { r = 100; g = 0; b = 100; }                       
         break;
       case 2: r = 100; g = 0; b = 0; break;
     }
     
-    // Deaktivierte Func-Nodes deutlich dimmen
     bool dim = (nodes[i].art >= 5 && !nodes[i].enabled);
     if (dim) { r /= 5; g /= 5; b /= 5; }
     
@@ -1562,7 +1589,7 @@ String getRandomSpruch(int art, String status) {
             else cachedSpruch = F("Raketen-Modus!\nSchubkraft aufs\nMaximum!");
         } else if (status == "BREMSEN") {
             if(r == 0) cachedSpruch = F("Zischhh...\nBremsen greifen!");
-            else if(r == 1) cachedSpruch = F("Voll in die Eisen!\nBitte recht freundlich\nfürs Foto!");
+            else if(r == 1) cachedSpruch = F("Voll in die Eisen!\nBitte recht freundlich\nfuers Foto!");
             else cachedSpruch = F("Sanfte Landung!\nSchwung wird exakt\nabgebaut!");
         } else if (status == "AUSROLLEN") {
             if(r == 0) cachedSpruch = F("Haende hoch!\nSchwung in den Lift\nmitnehmen!");
@@ -1601,13 +1628,13 @@ String getRandomSpruch(int art, String status) {
                 else cachedSpruch = F("Aufzug in Sicht!\nNachladen fuer die\nnaechste Hoehe!");
                 break;
               case 6:
-                if(r == 0) cachedSpruch = F("Bremszone in Sicht!\nBitte laecheln fürs\nZielfoto!");
+                if(r == 0) cachedSpruch = F("Bremszone in Sicht!\nBitte laecheln fuers\nZielfoto!");
                 else if(r == 1) cachedSpruch = F("Endstation Sehnsucht!\nGleich greifen die\nSchwerter!");
                 else cachedSpruch = F("Abkuehlung naht!\nDie Bremslamellen\nwarten!");
                 break;
               case 7:
                 if(r == 0) cachedSpruch = F("Booster-Launch naht!\nBereit zum Abheben?");
-                else if(r == 1) cachedSpruch = F("Katapult in Sicht!\nGleich zündet die\nnaechste Stufe!");
+                else if(r == 1) cachedSpruch = F("Katapult in Sicht!\nGleich zuendet die\nnaechste Stufe!");
                 else cachedSpruch = F("Beschleuniger voraus!\nVolle Power!");
                 break;
               default:
@@ -1664,16 +1691,20 @@ void drawTelemetry(int currentLed, float currentVel, float currentAcc, String st
     if (displayMode == 1) { // Kirmes Modus
         display.setTextSize(1);
         display.setCursor(0, 0); display.println(F("-- JAHRMARKT LIVE --"));
-        display.setCursor(0, 14); display.printf("Spd m/s: %.1f (%.1f)", currentVel, maxReachedSpeed);
+        display.setCursor(0, 14); display.printf("Spd: %.1f G: %.1f", currentVel, currentGForce);
         display.setCursor(0, 32); display.println(getRandomSpruch(art, status));
-    } else { // Telemetrie Modus
+    } else { // Telemetrie Modus 
         display.setTextSize(1);
         display.setCursor(0, 0); display.println(F("-- TELEMETRIE --"));
-        display.setCursor(0, 11); display.print(F("Pos: ")); display.print(currentLed); display.print(F("/")); display.println(ledCount);
-        display.setCursor(0, 22); display.printf("Spd m/s: %.1f (%.1f)", currentVel, maxReachedSpeed);
-        display.setCursor(0, 33); display.print(F("Status: ")); display.println(status);
+        display.setCursor(0, 10); display.print(F("Pos: ")); display.print(currentLed); display.print(F("/")); display.println(ledCount);
+        display.setCursor(0, 19); display.printf("Spd m/s: %.1f (%.1f)", currentVel, maxReachedSpeed);
+        
+        // --- HIER DIE ÄNDERUNG FÜR DIE AIRTIME G-KRÄFTE ---
+        display.setCursor(0, 28); display.printf("G: %.1f (%.1f/%.1f)", currentGForce, maxGForce, minGForce);
+        
+        display.setCursor(0, 37); display.print(F("Status: ")); display.println(status);
 
-        display.setCursor(0, 44);
+        display.setCursor(0, 46);
         if (activeIdx != -1) display.print(F("Aktiv: Elem")); else display.print(F("Ziel: Elem"));
         if (displayIdx != -1) {
             display.print(displayIdx + 1); display.print(F(" (")); display.print(elementArtNames[art]); display.println(F(")"));
@@ -1751,21 +1782,52 @@ void bezierCalculations() {
   }
 }
 
+// ==========================================
+// SEGMENT & G-KRAFT BERECHNUNG
+// ==========================================
 void segmentCalculations() {
   if (bezierPointCount < 2) return;
-  segmentCount = bezierPointCount; if (segments != nullptr) delete[] segments;
+  segmentCount = bezierPointCount; 
+  if (segments != nullptr) delete[] segments;
   segments = new SegmentData[segmentCount];
+  
   for (int i = 0; i < segmentCount - 1; i++) {
-    float dx = bezierPoints[i + 1].x - bezierPoints[i].x; float dy = bezierPoints[i + 1].y - bezierPoints[i].y;
-    float distance = sqrt(dx * dx + dy * dy); float acc = 0.0f;
-    if (distance > 0.0001f) acc = (-dy / distance) * 9.81f;
-    if (i == 0) segments[i].distance = distance; else segments[i].distance = segments[i-1].distance + distance;
+    float dx = bezierPoints[i + 1].x - bezierPoints[i].x; 
+    float dy = bezierPoints[i + 1].y - bezierPoints[i].y;
+    float dist = sqrt(dx * dx + dy * dy); 
+    float acc = 0.0f;
+    if (dist > 0.0001f) acc = (-dy / dist) * 9.81f;
+    
+    segments[i].distance = (i == 0) ? dist : (segments[i-1].distance + dist);
     segments[i].acc = acc;
+    segments[i].angle = atan2(dy, dx);
   }
-  int last = segmentCount - 1; float lastDistance = ledCount - segments[last - 1].distance;
-  float dy = bezierPoints[0].y - bezierPoints[last].y; float acc = 0.0f;
-  if (lastDistance > 0.0001f) acc = (-dy / lastDistance) * 9.81f;
-  segments[last].distance = ledCount; segments[last].acc = acc;
+  
+  int last = segmentCount - 1; 
+  float dx_last = ledCount - bezierPoints[last].x; 
+  if (dx_last < 0.1f) dx_last = 0.1f;
+  float dy_last = bezierPoints[0].y - bezierPoints[last].y; 
+  float dist_last = sqrt(dx_last * dx_last + dy_last * dy_last);
+  float acc_last = 0.0f;
+  if (dist_last > 0.0001f) acc_last = (-dy_last / dist_last) * 9.81f;
+  
+  segments[last].distance = ledCount; 
+  segments[last].acc = acc_last;
+  segments[last].angle = atan2(dy_last, dx_last);
+
+  for (int i = 0; i < segmentCount; i++) {
+    float prevAngle = (i == 0) ? segments[segmentCount - 1].angle : segments[i - 1].angle;
+    float currAngle = segments[i].angle;
+    float dAngle = currAngle - prevAngle;
+    
+    while (dAngle > PI) dAngle -= 2.0f * PI;
+    while (dAngle < -PI) dAngle += 2.0f * PI;
+    
+    float dist = (i == 0) ? segments[0].distance : (segments[i].distance - segments[i - 1].distance);
+    
+    if (dist > 0.0001f) segments[i].curvature = dAngle / dist;
+    else segments[i].curvature = 0.0f;
+  }
 }
 
 void sortNodesAndRecalculate() {
@@ -1933,16 +1995,15 @@ bool slotExists(int slot) {
     return LittleFS.exists(getSlotFilename(slot));
 }
 
-// File-Format-Versionierung (für Backward-Compat bei Struct-Änderungen)
+// File-Format-Versionierung
 const uint16_t FILE_MAGIC   = 0xABCD;
-const uint8_t  FORMAT_VER   = 2;       // V2: Node hat enabled-Feld
+const uint8_t  FORMAT_VER   = 4; // V4: Enthält jetzt auch gForceScale
 
 void savePlayDataSlot(int slot) {
     String filename = getSlotFilename(slot);
     File f = LittleFS.open(filename, "w");
     if (!f) return;
 
-    // Header: Magic + Version
     uint16_t magic = FILE_MAGIC;
     uint8_t  ver   = FORMAT_VER;
     f.write((uint8_t*)&magic, sizeof(magic));
@@ -1972,6 +2033,8 @@ void savePlayDataSlot(int slot) {
     f.write((uint8_t*)&zoneBrightness, sizeof(zoneBrightness));
     f.write((uint8_t*)&displayFps, sizeof(displayFps)); 
     
+    f.write((uint8_t*)&gForceScale, sizeof(gForceScale)); // NEU
+    
     f.close();
 }
 
@@ -1983,17 +2046,16 @@ bool loadPlayDataSlot(int slot) {
 
     if (f.size() < 10) { f.close(); return false; }
 
-    // Magic-Byte-Check fuer Versionierung
     bool isV2 = false;
+    uint8_t loadedVer = 1;
     uint16_t firstWord;
     f.read((uint8_t*)&firstWord, sizeof(firstWord));
     
     if (firstWord == FILE_MAGIC) {
-        uint8_t ver;
-        f.read((uint8_t*)&ver, sizeof(ver));
-        isV2 = (ver >= 2);
+        f.read((uint8_t*)&loadedVer, sizeof(loadedVer));
+        isV2 = (loadedVer >= 2);
     } else {
-        f.seek(0); // V1: zurueck zum Anfang
+        f.seek(0); 
     }
 
     f.read((uint8_t*)&ledCount, sizeof(ledCount));
@@ -2006,21 +2068,17 @@ bool loadPlayDataSlot(int slot) {
         f.read((uint8_t*)&carBrightness, sizeof(carBrightness));
         f.read((uint8_t*)&trackBrightness, sizeof(trackBrightness));
     } else {
-        carBrightness = 150;
-        trackBrightness = 10;
+        carBrightness = 150; trackBrightness = 10;
     }
 
-    if (f.available() >= (int)sizeof(displayMode)) {
-        f.read((uint8_t*)&displayMode, sizeof(displayMode));
-    } else displayMode = 0;
+    if (f.available() >= (int)sizeof(displayMode)) f.read((uint8_t*)&displayMode, sizeof(displayMode));
+    else displayMode = 0;
 
-    if (f.available() >= (int)sizeof(colorMaxSpeed)) {
-        f.read((uint8_t*)&colorMaxSpeed, sizeof(colorMaxSpeed));
-    } else colorMaxSpeed = 15.0f;
+    if (f.available() >= (int)sizeof(colorMaxSpeed)) f.read((uint8_t*)&colorMaxSpeed, sizeof(colorMaxSpeed));
+    else colorMaxSpeed = 15.0f;
 
-    if (f.available() >= (int)sizeof(showZoneEffects)) {
-        f.read((uint8_t*)&showZoneEffects, sizeof(showZoneEffects));
-    } else showZoneEffects = 2;
+    if (f.available() >= (int)sizeof(showZoneEffects)) f.read((uint8_t*)&showZoneEffects, sizeof(showZoneEffects));
+    else showZoneEffects = 2;
     
     if(selectedCarColorIdx >= NUM_COLORS) selectedCarColorIdx = 0;
     if(selectedTrackColorIdx >= NUM_COLORS) selectedTrackColorIdx = 7;
@@ -2058,25 +2116,49 @@ bool loadPlayDataSlot(int slot) {
         if (segmentCount > 0) {
             if (segments != nullptr) delete[] segments;
             segments = new SegmentData[segmentCount];
-            f.read((uint8_t*)segments, sizeof(SegmentData) * segmentCount);
+            if (loadedVer >= 3) {
+                f.read((uint8_t*)segments, sizeof(SegmentData) * segmentCount);
+            } else {
+                struct OldSegmentData { float distance; float acc; };
+                OldSegmentData* oldSegs = new OldSegmentData[segmentCount];
+                f.read((uint8_t*)oldSegs, sizeof(OldSegmentData) * segmentCount);
+                for(int i=0; i<segmentCount; i++) {
+                    segments[i].distance = oldSegs[i].distance;
+                    segments[i].acc = oldSegs[i].acc;
+                    segments[i].angle = 0.0f;     
+                    segments[i].curvature = 0.0f; 
+                }
+                delete[] oldSegs;
+            }
         }
     }
 
-    if (f.available() >= (int)sizeof(zoneBrightness)) {
-        f.read((uint8_t*)&zoneBrightness, sizeof(zoneBrightness));
-    } else {
-        zoneBrightness = 10; // <-- GEÄNDERT: Fallback nun auf 10
-    }
+    if (f.available() >= (int)sizeof(zoneBrightness)) f.read((uint8_t*)&zoneBrightness, sizeof(zoneBrightness));
+    else zoneBrightness = 10;
 
     if (f.available() >= (int)sizeof(displayFps)) {
         f.read((uint8_t*)&displayFps, sizeof(displayFps));
         if (displayFps < 1 || displayFps > 20) displayFps = 4;
+    } else displayFps = 4;
+
+    // NEU: G-Kraft Skalierung aus dem Speicher laden
+    if (f.available() >= (int)sizeof(gForceScale)) {
+        f.read((uint8_t*)&gForceScale, sizeof(gForceScale));
+        if (gForceScale < 0.01f || gForceScale > 1.0f) gForceScale = 0.20f;
     } else {
-        displayFps = 4;
+        gForceScale = 0.20f;
     }
 
     f.close();
     strip.updateLength(ledCount);
+
+    if (loadedVer < 3 && nodeCount > 0) {
+        calculations();
+        bezierCalculations();
+        segmentCalculations();
+        savePlayDataSlot(slot); 
+    }
+
     return true;
 }
 
@@ -2098,7 +2180,10 @@ void moveLED() {
 
     if (!initialized) {
         pos = 0.0f; vel = 0.5f;  
-        maxReachedSpeed = vel; // <-- NEU: Reset beim Start
+        maxReachedSpeed = vel; 
+        currentGForce = 1.0f;  
+        maxGForce = 1.0f;
+        minGForce = 1.0f;
         lastTime = millis(); currentSegment = 0;
         initialized = true;
     }
@@ -2203,7 +2288,22 @@ void moveLED() {
         if (braking && vel < brakeTarget) vel = brakeTarget;
         if (vel < 0.02f) vel = 0.02f; 
 
-        if (vel > maxReachedSpeed) maxReachedSpeed = vel; // <-- NEU: Erfassen der Höchstgeschwindigkeit
+        if (vel > maxReachedSpeed) maxReachedSpeed = vel;
+
+        // --- 3B. G-KRAFT BERECHNUNG INKLUSIVE SKALIERUNG ---
+        float curvature = segments[currentSegment].curvature;
+        float angle = segments[currentSegment].angle;
+        
+        // Die Fliehkraft (dynamischer Anteil) wird mit dem einstellbaren Faktor abgeschwächt.
+        // Die Schwerkraft (cos(angle)) bleibt bei exakt 1G, damit die Physik stimmt (stehend = 1G).
+        float dynamicG = ((vel * vel * curvature) / 9.81f) * gForceScale;
+        float rawGForce = cos(angle) + dynamicG;
+        
+        // Sanfter Tiefpassfilter (Glättung) für saubere Display-Werte
+        currentGForce = (currentGForce * 0.9f) + (rawGForce * 0.1f);
+        
+        if (currentGForce > maxGForce) maxGForce = currentGForce;
+        if (currentGForce < minGForce) minGForce = currentGForce;
 
         pos += vel * dt;
         
