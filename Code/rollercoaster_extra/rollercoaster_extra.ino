@@ -1674,7 +1674,7 @@ void drawTelemetry(int currentLed, float currentVel, float currentAcc, String st
         display.setCursor(0, 33); display.print(F("Status: ")); display.println(status);
 
         display.setCursor(0, 44);
-        if (activeIdx != -1) display.print(F("Aktiv: Elem ")); else display.print(F("Ziel: Elem"));
+        if (activeIdx != -1) display.print(F("Aktiv: Elem")); else display.print(F("Ziel: Elem"));
         if (displayIdx != -1) {
             display.print(displayIdx + 1); display.print(F(" (")); display.print(elementArtNames[art]); display.println(F(")"));
         } else display.println(F("-"));

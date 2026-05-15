@@ -17,6 +17,10 @@ Der vollständige Artikel zum Projekt steht in der **[Make-Ausgabe 2/26](https:/
 ---
 # Infos aus dem FORK
 
+## geplante Features
+- Anzeige von G-Käften unter Telemetrie
+- Anbindung von DFPlayer für AudioEffekte
+
 # Rollercoaster LED‑Simulation  
 *Interaktive Achterbahn‑Physik auf einem ESP32 mit OLED‑Display und bis zu 1000 LEDs.*
 
