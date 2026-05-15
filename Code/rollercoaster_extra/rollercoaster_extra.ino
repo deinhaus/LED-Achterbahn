@@ -37,10 +37,11 @@ const int NUM_ARTEN = 8;
 struct Node {
   uint16_t pos;
   uint16_t height;
-  uint8_t  type;   // 0=Startpunkt, 1=Scheitelpunkt, 2=Endpunkt
-  uint8_t  art;    // 0=Kuppe, 1=Loop, 2=Helix, 3=Steilkurve, 4=Bottom, 5=Lift, 6=Bremse, 7=Booster
-  float    force;  // Einstellbarer Wert (Lift: m/s, Bremse: Ziel m/s, Booster: Schub)
-  uint16_t length; // Länge der Funktionszone in Fließrichtung (LEDs)
+  uint8_t  type;    // 0=Startpunkt, 1=Scheitelpunkt, 2=Endpunkt
+  uint8_t  art;     // 0=Kuppe, 1=Loop, 2=Helix, 3=Steilkurve, 4=Bottom, 5=Lift, 6=Bremse, 7=Booster
+  float    force;   // Einstellbarer Wert (Lift: m/s, Bremse: Ziel m/s, Booster: Schub)
+  uint16_t length;  // Länge der Funktionszone in Fließrichtung (LEDs)
+  uint8_t  enabled; // 0 = deaktiviert, 1 = aktiv (nur relevant für art >= 5)
 };
 
 Node* nodes = nullptr;
@@ -118,14 +119,14 @@ int lastPos = -1;
 int menuSelection = 0;
 int opticsMenuSelection = 0; 
 int elementsMenuSelection = 0;
-int editNodeIdx = 0;       
+int editNodeIdx = 0;        
 int editMenuSelection = 0; 
 int editDeleteConfirmSelection = 1; 
 
 const int NUM_SLOTS = 5;
-int selectedSlot = 1;          
-int activeLoadedSlot = 1;      
-int slotActionSelection = 0;   
+int selectedSlot = 1;           
+int activeLoadedSlot = 1;       
+int slotActionSelection = 0;    
 int deleteConfirmSelection = 1;
 
 // ==========================================
@@ -141,7 +142,7 @@ const int lengthMaxSpeed = 10;
 
 point2D* points = nullptr;
 uint16_t pointCount = 0;
-const int steps = 200;       
+const int steps = 200;        
 int targetLength = 0;   
 const float tolerance = 0.001f; 
 
@@ -156,6 +157,8 @@ const int intSteps = 20;
 
 float pos = 0.0f;
 float vel = 0.0f;
+float maxReachedSpeed = 0.0f; // <-- NEU: Speichert die maximale erreichte Geschwindigkeit
+
 uint16_t startLedPos = 0;
 unsigned long lastTime = 0;
 int currentSegment = 0;
@@ -167,7 +170,7 @@ uint8_t playBrightness = 255;
 int carLength = 5;  
 int carBrightness = 150;   
 int trackBrightness = 10;
-int zoneBrightness = 25; 
+int zoneBrightness = 10; 
 uint8_t displayMode = 0; 
 int displayFps = 4;        
 float colorMaxSpeed = 15.0f; 
@@ -187,7 +190,6 @@ uint32_t trackColor;
 
 float friction = 0.015f;                           
 float airResistance = 0.002f;                      
-
 
 // ==========================================
 // VORAB-DEKLARATIONEN
@@ -269,7 +271,6 @@ bool isButtonPressed() {
     return false;
 }
 
-
 // ==========================================
 // SETUP
 // ==========================================
@@ -321,7 +322,6 @@ void setup() {
     display.clearDisplay();
     Serial.println(F("System bereit."));
 }
-
 
 // ==========================================
 // MAIN LOOP
@@ -465,13 +465,10 @@ void loop() {
       }
       break;
 
-    // ------------------------------------------
-    // UNTERMENÜ: OPTIK & DISPLAY
-    // ------------------------------------------
     case ST_OPTICS_MENU:
       if (newPos != lastPos) {
         if (newPos < 0) { encoder.setPosition(0); newPos = 0; }
-        if (newPos >= 11) { encoder.setPosition(10); newPos = 10; } // <-- Geändert auf 11 Optionen
+        if (newPos >= 11) { encoder.setPosition(10); newPos = 10; }
         opticsMenuSelection = newPos; drawOpticsMenu(); lastPos = newPos;
       }
       if (isButtonPressed()) {
@@ -580,9 +577,6 @@ void loop() {
       if (isButtonPressed()) { uiState = ST_OPTICS_MENU; encoder.setPosition(9); lastPos = -1; }
       break;
 
-    // ------------------------------------------
-    // UNTERMENÜ: ELEMENTE BASE
-    // ------------------------------------------
     case ST_ELEMENTS_MENU:
       if (newPos != lastPos) {
         if (newPos < 0) { encoder.setPosition(0); newPos = 0; }
@@ -617,9 +611,6 @@ void loop() {
       }
       break;
 
-    // ------------------------------------------
-    // BESTEHENDE ELEMENTE BEARBEITEN
-    // ------------------------------------------
     case ST_EDIT_SELECT_NODE:
       if (newPos != lastPos) {
         if (newPos < 0) { encoder.setPosition(0); newPos = 0; }
@@ -641,19 +632,20 @@ void loop() {
 
     case ST_EDIT_NODE_MENU:
       if (newPos != lastPos) {
-        if (newPos < 0) { encoder.setPosition(0); newPos = 0; }
-        
         bool isStart   = (nodes[editNodeIdx].type == 0);
         bool canDelete = (nodes[editNodeIdx].type == 1 || nodes[editNodeIdx].type == 2);
-        bool isFunc    = (nodes[editNodeIdx].art >= 5);
+        bool hasFunc   = (nodes[editNodeIdx].art >= 5);
 
-        int optsCount = 3; 
-        if (!isStart) optsCount++;  
-        if (isFunc) optsCount += 2; 
-        if (canDelete) optsCount++; 
+        int maxMenu = 1; 
+        if (!isStart) maxMenu++;  
+        maxMenu++; 
+        if (hasFunc) maxMenu += 3; 
+        if (canDelete) maxMenu++; 
+        maxMenu++; 
+
+        if (newPos < 0) { encoder.setPosition(0); newPos = 0; }
+        if (newPos >= maxMenu) { encoder.setPosition(maxMenu - 1); newPos = maxMenu - 1; }
         
-        int maxMenu = optsCount - 1;
-        if (newPos > maxMenu) { encoder.setPosition(maxMenu); newPos = maxMenu; }
         editMenuSelection = newPos; drawEditNodeMenu(); lastPos = newPos;
       }
       if (isButtonPressed()) {
@@ -662,12 +654,13 @@ void loop() {
         bool isFunc    = (nodes[editNodeIdx].art >= 5);
 
         int optIdx = 0;
-        int optPos    = !isStart ? optIdx++ : -1;
-        int optHeight = optIdx++;
-        int optArt    = optIdx++;
-        int optForce  = isFunc ? optIdx++ : -1;
-        int optLength = isFunc ? optIdx++ : -1;
-        int optDel    = canDelete ? optIdx++ : -1;
+        int optPos      = !isStart ? optIdx++ : -1;
+        int optHeight   = optIdx++;
+        int optArt      = optIdx++;
+        int optForce    = isFunc ? optIdx++ : -1;
+        int optLength   = isFunc ? optIdx++ : -1;
+        int optEnabled  = isFunc ? optIdx++ : -1;  
+        int optDel      = canDelete ? optIdx++ : -1;
 
         if (editMenuSelection == optPos) {
            uiState = ST_EDIT_NODE_POS; encoder.setPosition(nodes[editNodeIdx].pos);  
@@ -679,6 +672,10 @@ void loop() {
            uiState = ST_EDIT_NODE_FORCE; encoder.setPosition((int)(nodes[editNodeIdx].force * 10.0f));
         } else if (isFunc && editMenuSelection == optLength) {
            uiState = ST_EDIT_NODE_LENGTH; encoder.setPosition(nodes[editNodeIdx].length);
+        } else if (isFunc && editMenuSelection == optEnabled) {
+           nodes[editNodeIdx].enabled = nodes[editNodeIdx].enabled ? 0 : 1;
+           drawEditNodeMenu();
+           drawSetupLeds();
         } else if (canDelete && editMenuSelection == optDel) {
            uiState = ST_EDIT_NODE_DELETE; editDeleteConfirmSelection = 1; encoder.setPosition(1);
         } else {
@@ -715,9 +712,9 @@ void loop() {
         if (newPos >= NUM_ARTEN) { encoder.setPosition(NUM_ARTEN - 1); newPos = NUM_ARTEN - 1; }
         nodes[editNodeIdx].art = newPos; 
         
-        if (nodes[editNodeIdx].art == 5 && nodes[editNodeIdx].force == 0) { nodes[editNodeIdx].force = 1.2f; nodes[editNodeIdx].length = 30; }
-        if (nodes[editNodeIdx].art == 6 && nodes[editNodeIdx].force == 0) { nodes[editNodeIdx].force = 2.0f; nodes[editNodeIdx].length = 10; } 
-        if (nodes[editNodeIdx].art == 7 && nodes[editNodeIdx].force == 0) { nodes[editNodeIdx].force = 25.0f; nodes[editNodeIdx].length = 5; }
+        if (nodes[editNodeIdx].art == 5 && nodes[editNodeIdx].force == 0) { nodes[editNodeIdx].force = 1.2f; nodes[editNodeIdx].length = 30; nodes[editNodeIdx].enabled = 1; }
+        if (nodes[editNodeIdx].art == 6 && nodes[editNodeIdx].force == 0) { nodes[editNodeIdx].force = 2.0f; nodes[editNodeIdx].length = 10; nodes[editNodeIdx].enabled = 1; } 
+        if (nodes[editNodeIdx].art == 7 && nodes[editNodeIdx].force == 0) { nodes[editNodeIdx].force = 25.0f; nodes[editNodeIdx].length = 5; nodes[editNodeIdx].enabled = 1; }
         drawEditNodeArt(); lastPos = newPos;
       }
       if (isButtonPressed()) { uiState = ST_EDIT_NODE_MENU; encoder.setPosition(0); lastPos = -1; }
@@ -767,9 +764,6 @@ void loop() {
       }
       break;
 
-    // ------------------------------------------
-    // ELEMENT NACHTRÄGLICH EINFÜGEN
-    // ------------------------------------------
     case ST_INSERT_POS:
       if (newPos != lastPos) {
         if (newPos < 0) { encoder.setPosition(ledCount - 1); newPos = ledCount - 1; }
@@ -799,10 +793,10 @@ void loop() {
         if (newPos >= NUM_ARTEN) { encoder.setPosition(NUM_ARTEN - 1); newPos = NUM_ARTEN - 1; }
         currentNode.art = newPos;
         
-        if (currentNode.art == 5) { currentNode.force = 1.2f; currentNode.length = 30; }       
-        else if (currentNode.art == 6) { currentNode.force = 2.0f; currentNode.length = 10; } 
-        else if (currentNode.art == 7) { currentNode.force = 25.0f; currentNode.length = 5; }  
-        else { currentNode.force = 0.0f; currentNode.length = 0; }
+        if (currentNode.art == 5) { currentNode.force = 1.2f; currentNode.length = 30; currentNode.enabled = 1; }        
+        else if (currentNode.art == 6) { currentNode.force = 2.0f; currentNode.length = 10; currentNode.enabled = 1; } 
+        else if (currentNode.art == 7) { currentNode.force = 25.0f; currentNode.length = 5; currentNode.enabled = 1; }  
+        else { currentNode.force = 0.0f; currentNode.length = 0; currentNode.enabled = 0; }
         
         drawInsertArt(); lastPos = newPos;
       }
@@ -972,10 +966,10 @@ void loop() {
         if (newPos >= NUM_ARTEN) { encoder.setPosition(NUM_ARTEN - 1); newPos = NUM_ARTEN - 1; }
         menuSelection = newPos; currentNode.art = menuSelection;
         
-        if (currentNode.art == 5) { currentNode.force = 1.2f; currentNode.length = 30; }       
-        else if (currentNode.art == 6) { currentNode.force = 2.0f; currentNode.length = 10; }   
-        else if (currentNode.art == 7) { currentNode.force = 25.0f; currentNode.length = 5; }  
-        else { currentNode.force = 0.0f; currentNode.length = 0; }
+        if (currentNode.art == 5) { currentNode.force = 1.2f; currentNode.length = 30; currentNode.enabled = 1; }        
+        else if (currentNode.art == 6) { currentNode.force = 2.0f; currentNode.length = 10; currentNode.enabled = 1; }   
+        else if (currentNode.art == 7) { currentNode.force = 25.0f; currentNode.length = 5; currentNode.enabled = 1; }  
+        else { currentNode.force = 0.0f; currentNode.length = 0; currentNode.enabled = 0; }
         
         drawNodeArtSetup(); lastPos = newPos;
       }
@@ -1034,7 +1028,6 @@ void loop() {
   } 
 }
 
-
 // ==========================================
 // DYNAMISCHE SPEED-FARBE
 // ==========================================
@@ -1057,7 +1050,6 @@ uint32_t getSpeedColor(float currentVel, uint8_t bright) {
     g = ((uint16_t)g * bright) / 255;
     return strip.Color(r, g, b);
 }
-
 
 // ==========================================
 // MENÜ- & DISPLAY-GRAFIKEN
@@ -1108,7 +1100,7 @@ void drawFileDeleteConfirm() {
 }
 
 void drawOpticsMenu() {
-    const int TOTAL_OPTIONS = 11; // <-- Geändert: Jetzt 11 Optionen
+    const int TOTAL_OPTIONS = 11;
     const int VISIBLE_LINES = 7;
     const int LINE_HEIGHT = 8;
     const int START_Y = 9;
@@ -1224,15 +1216,20 @@ void drawSetupLeds() {
         if(nodes[i].art == 5) { r = 0; g = 100; b = 255; }      
         else if(nodes[i].art == 6) { r = 255; g = 50; b = 0; }  
         else if(nodes[i].art == 7) { r = 255; g = 255; b = 0; } 
-        else { r = 100; g = 0; b = 100; }                       
+        else { r = 100; g = 0; b = 100; }                        
         break;
       case 2: r = 100; g = 0; b = 0; break;
     }
     
+    // Deaktivierte Func-Nodes deutlich dimmen
+    bool dim = (nodes[i].art >= 5 && !nodes[i].enabled);
+    if (dim) { r /= 5; g /= 5; b /= 5; }
+    
     if (nodes[i].art >= 5 && nodes[i].length > 0) {
+        uint16_t zBright = dim ? (zoneBrightness / 5) : zoneBrightness;
         for (uint16_t l = 0; l < nodes[i].length; l++) {
             uint16_t zPos = (nodes[i].pos + l) % ledCount;
-            strip.setPixelColor(zPos, strip.Color((r * zoneBrightness)/255, (g * zoneBrightness)/255, (b * zoneBrightness)/255)); 
+            strip.setPixelColor(zPos, strip.Color((r * zBright)/255, (g * zBright)/255, (b * zBright)/255)); 
         }
     }
     strip.setPixelColor(nodes[i].pos, strip.Color(r, g, b));
@@ -1276,7 +1273,11 @@ void drawEditSelectNode() {
     if (n.type == 0) display.println(F("Startpunkt")); else if (n.type == 1) display.println(F("Scheitelpunkt")); else display.println(F("Endpunkt"));
     display.setCursor(0, 32); display.print(F("Art:  ")); display.println(elementArtNames[n.art]);
     display.setCursor(0, 42); display.print(F("H: ")); display.print(n.height); 
-    if (n.art >= 5) { display.print(F("  F: ")); display.print(n.force, 1); display.print(F(" L: ")); display.print(n.length); }
+    if (n.art >= 5) { 
+        display.print(F("  F: ")); display.print(n.force, 1); 
+        display.print(F(" L: ")); display.print(n.length);
+        if (!n.enabled) { display.print(F(" OFF")); }
+    }
     display.setCursor(0, 52); display.print(F("LED-Pos: ")); display.println(n.pos);
   }
   display.display();
@@ -1293,54 +1294,39 @@ void drawEditSelectNode() {
 }
 
 void drawEditNodeMenu() {
-  display.clearDisplay(); display.setTextSize(1); display.setTextColor(SH110X_WHITE);
-  display.setCursor(0, 0);  display.print(F("ELEM ")); display.print(editNodeIdx + 1); display.println(F(" BEARBEITEN:"));
-  
-  bool isStart   = (nodes[editNodeIdx].type == 0);
-  bool canDelete = (nodes[editNodeIdx].type == 1 || nodes[editNodeIdx].type == 2);
-  bool hasForce  = (nodes[editNodeIdx].art >= 5);
-  
-  int currLineY = 10;
-  int optIdx = 0;
-  
-  if (!isStart) {
-     display.setCursor(0, currLineY); 
-     display.print(editMenuSelection == optIdx ? F("> Pos:   ") : F("  Pos:   ")); 
-     display.println(nodes[editNodeIdx].pos);
-     currLineY += 8; optIdx++;
-  }
-  
-  display.setCursor(0, currLineY); 
-  display.print(editMenuSelection == optIdx ? F("> Hoehe: ") : F("  Hoehe: ")); 
-  display.println(nodes[editNodeIdx].height);
-  currLineY += 8; optIdx++;
-  
-  display.setCursor(0, currLineY);  
-  display.print(editMenuSelection == optIdx ? F("> Art:   ") : F("  Art:   ")); 
-  display.println(elementArtNames[nodes[editNodeIdx].art]);
-  currLineY += 8; optIdx++;
-  
-  if (hasForce) {
-     display.setCursor(0, currLineY); 
-     display.print(editMenuSelection == optIdx ? F("> Wert:  ") : F("  Wert:  ")); 
-     display.println(nodes[editNodeIdx].force, 1);
-     currLineY += 8; optIdx++;
+    display.clearDisplay();
+    display.setTextSize(1); display.setTextColor(SH110X_WHITE);
+    display.setCursor(0, 0); display.printf("ELEM %d SETUP:", editNodeIdx + 1);
 
-     display.setCursor(0, currLineY); 
-     display.print(editMenuSelection == optIdx ? F("> Len:   ") : F("  Len:   ")); 
-     display.println(nodes[editNodeIdx].length);
-     currLineY += 8; optIdx++;
-  }
-  
-  if (canDelete) {
-     display.setCursor(0, currLineY); 
-     display.println(editMenuSelection == optIdx ? F("> Loeschen") : F("  Loeschen"));
-     currLineY += 8; optIdx++;
-  }
-  
-  display.setCursor(0, currLineY); 
-  display.println(editMenuSelection == optIdx ? F("> ZURUECK") : F("  ZURUECK"));
-  display.display();
+    bool isStart = (nodes[editNodeIdx].type == 0);
+    bool hasFunc = (nodes[editNodeIdx].art >= 5);
+    bool canDel  = (nodes[editNodeIdx].type != 0);
+
+    struct MItem { const char* l; String v; };
+    MItem m[10]; int c = 0;
+
+    if (!isStart) m[c++] = {"Pos", String(nodes[editNodeIdx].pos)};
+    m[c++] = {"Hoehe", String(nodes[editNodeIdx].height)};
+    m[c++] = {"Art", String(elementArtNames[nodes[editNodeIdx].art])};
+    if (hasFunc) {
+        m[c++] = {"Wert", String(nodes[editNodeIdx].force, 1)};
+        m[c++] = {"Len", String(nodes[editNodeIdx].length)};
+        m[c++] = {"Aktiv", nodes[editNodeIdx].enabled ? "JA" : "NEIN"};
+    }
+    if (canDel) m[c++] = {"LOESCHEN", ""};
+    m[c++] = {"ZURUECK", ""};
+
+    int VIS = 6; int first = 0;
+    if (editMenuSelection >= VIS) first = editMenuSelection - VIS + 1;
+
+    for (int i = 0; i < VIS; i++) {
+        int idx = first + i; if (idx >= c) break;
+        display.setCursor(0, 12 + i * 8);
+        display.print(idx == editMenuSelection ? "> " : "  ");
+        display.print(m[idx].l);
+        if (m[idx].v != "") { display.print(": "); display.print(m[idx].v); }
+    }
+    display.display();
 }
 
 void drawEditNodeDelete() {
@@ -1633,66 +1619,74 @@ String getRandomSpruch(int art, String status) {
     return cachedSpruch;
 }
 
+// ==========================================
+// TELEMETRIE & ZIEL-LOGIK (AKTIV/ZIEL)
+// ==========================================
 void drawTelemetry(int currentLed, float currentVel, float currentAcc, String status) {
-  display.clearDisplay(); 
-  display.setTextColor(SH110X_WHITE);
-  
-  int nextNodeIdx = -1;
-  float minDist = ledCount + 10.0f;
-  float p_curr = pos;
-  while (p_curr < 0.0f) p_curr += ledCount;
-  while (p_curr >= ledCount) p_curr -= ledCount;
+    display.clearDisplay();
+    display.setTextColor(SH110X_WHITE);
 
-  for (int i = 0; i < nodeCount; i++) {
-      float n_pos = nodes[i].pos;
-      float dist = (n_pos >= p_curr) ? (n_pos - p_curr) : ((ledCount - p_curr) + n_pos);
-      if (dist < minDist) {
-          minDist = dist;
-          nextNodeIdx = i-1;
-      }
-  }
-  int nextArt = (nextNodeIdx != -1) ? nodes[nextNodeIdx].art : 0;
+    int activeIdx = -1;
+    int nextIdx = -1;
+    float minDist = (float)ledCount + 10.0f;
+    float p_curr = pos; 
 
-  if (displayMode == 1) {
-      display.setTextSize(1);
-      display.setCursor(0, 0); 
-      display.println(F("-- JAHRMARKT LIVE --"));
-      
-      display.setCursor(0, 14);
-      display.print(F("Speed: ")); 
-      display.print(currentVel, 1); 
-      display.println(F(" m/s"));
+    // 1. Check: Sind wir GERADE IN einer Zone?
+    for (int i = 0; i < nodeCount; i++) {
+        if (nodes[i].art >= 5) {
+            float n_rel = (nodes[i].pos >= startLedPos) ? (float)(nodes[i].pos - startLedPos) : (float)((ledCount - startLedPos) + nodes[i].pos);
+            float distToStart = p_curr - n_rel;
+            if (distToStart < 0) distToStart += ledCount;
+            if (distToStart <= nodes[i].length && nodes[i].length > 0) { 
+                activeIdx = i; 
+                break; 
+            }
+        }
+    }
 
-      display.setCursor(0, 32);
-      display.println(getRandomSpruch(nextArt, status));
-  } else {
-      display.setTextSize(1);
-      display.setCursor(0, 0); 
-      display.println(F("-- TELEMETRIE --"));
-      
-      display.setCursor(0, 11);
-      display.print(F("Pos: ")); display.print(currentLed); display.print(F("/")); display.println(ledCount);
-      
-      display.setCursor(0, 22);
-      display.print(F("Speed: ")); display.print(currentVel, 1); display.println(F(" m/s"));
-      
-      display.setCursor(0, 33);
-      display.print(F("Status: ")); display.println(status);
+    // 2. Nächstes Ziel suchen
+    if (activeIdx == -1) {
+        for (int i = 0; i < nodeCount; i++) {
+            float n_rel = (nodes[i].pos >= startLedPos) ? (float)(nodes[i].pos - startLedPos) : (float)((ledCount - startLedPos) + nodes[i].pos);
+            float dist = (n_rel >= p_curr) ? (n_rel - p_curr) : ((ledCount - p_curr) + n_rel);
+            if (dist > 0.5f && dist < minDist) { 
+                minDist = dist; 
+                nextIdx = i; 
+            }
+        }
+    }
 
-      display.setCursor(0, 44);
-      display.print(F("Ziel: Elem "));
-      if (nextNodeIdx != -1) {
-          display.print(nextNodeIdx + 1); display.print(F(" (")); display.print(elementArtNames[nextArt]); display.println(F(")"));
-      } else display.println(F("-"));
+    int displayIdx = (activeIdx != -1) ? activeIdx : nextIdx;
+    if (displayIdx == -1 && nodeCount > 0) displayIdx = 0;
+    
+    int art = (displayIdx != -1) ? nodes[displayIdx].art : 0;
 
-      display.setCursor(0, 55);
-      if (nextNodeIdx != -1) {
-          display.print(F(" LED: ")); display.print(nodes[nextNodeIdx].pos); display.print(F("  H: ")); display.println(nodes[nextNodeIdx].height);
-      }
-  }
-  display.display();
+    if (displayMode == 1) { // Kirmes Modus
+        display.setTextSize(1);
+        display.setCursor(0, 0); display.println(F("-- JAHRMARKT LIVE --"));
+        display.setCursor(0, 14); display.printf("Spd m/s: %.1f (%.1f)", currentVel, maxReachedSpeed);
+        display.setCursor(0, 32); display.println(getRandomSpruch(art, status));
+    } else { // Telemetrie Modus
+        display.setTextSize(1);
+        display.setCursor(0, 0); display.println(F("-- TELEMETRIE --"));
+        display.setCursor(0, 11); display.print(F("Pos: ")); display.print(currentLed); display.print(F("/")); display.println(ledCount);
+        display.setCursor(0, 22); display.printf("Spd m/s: %.1f (%.1f)", currentVel, maxReachedSpeed);
+        display.setCursor(0, 33); display.print(F("Status: ")); display.println(status);
+
+        display.setCursor(0, 44);
+        if (activeIdx != -1) display.print(F("Aktiv: Elem ")); else display.print(F("Ziel: Elem"));
+        if (displayIdx != -1) {
+            display.print(displayIdx + 1); display.print(F(" (")); display.print(elementArtNames[art]); display.println(F(")"));
+        } else display.println(F("-"));
+
+        display.setCursor(0, 55);
+        if (displayIdx != -1) {
+            display.print(F("Led: ")); display.print(nodes[displayIdx].pos);
+            display.print(F(" H: ")); display.println(nodes[displayIdx].height);
+        }
+    }
+    display.display();
 }
-
 
 // ==========================================
 // BERECHNUNGEN (BEZIER & PHYSIK)
@@ -1928,7 +1922,6 @@ void triggerManualRecalc() {
   encoder.setPosition(2); 
 }
 
-
 // ==========================================
 // DATEISYSTEM (SLOTS)
 // ==========================================
@@ -1940,17 +1933,27 @@ bool slotExists(int slot) {
     return LittleFS.exists(getSlotFilename(slot));
 }
 
+// File-Format-Versionierung (für Backward-Compat bei Struct-Änderungen)
+const uint16_t FILE_MAGIC   = 0xABCD;
+const uint8_t  FORMAT_VER   = 2;       // V2: Node hat enabled-Feld
+
 void savePlayDataSlot(int slot) {
     String filename = getSlotFilename(slot);
     File f = LittleFS.open(filename, "w");
     if (!f) return;
+
+    // Header: Magic + Version
+    uint16_t magic = FILE_MAGIC;
+    uint8_t  ver   = FORMAT_VER;
+    f.write((uint8_t*)&magic, sizeof(magic));
+    f.write((uint8_t*)&ver, sizeof(ver));
 
     f.write((uint8_t*)&ledCount, sizeof(ledCount));
     f.write((uint8_t*)&startLedPos, sizeof(startLedPos));
     f.write((uint8_t*)&selectedCarColorIdx, sizeof(selectedCarColorIdx));
     f.write((uint8_t*)&selectedTrackColorIdx, sizeof(selectedTrackColorIdx));
     f.write((uint8_t*)&carLength, sizeof(carLength)); 
-    f.write((uint8_t*)&carBrightness, sizeof(carBrightness));     
+    f.write((uint8_t*)&carBrightness, sizeof(carBrightness));      
     f.write((uint8_t*)&trackBrightness, sizeof(trackBrightness)); 
     f.write((uint8_t*)&displayMode, sizeof(displayMode)); 
     f.write((uint8_t*)&colorMaxSpeed, sizeof(colorMaxSpeed)); 
@@ -1979,6 +1982,19 @@ bool loadPlayDataSlot(int slot) {
     if (!f) return false;
 
     if (f.size() < 10) { f.close(); return false; }
+
+    // Magic-Byte-Check fuer Versionierung
+    bool isV2 = false;
+    uint16_t firstWord;
+    f.read((uint8_t*)&firstWord, sizeof(firstWord));
+    
+    if (firstWord == FILE_MAGIC) {
+        uint8_t ver;
+        f.read((uint8_t*)&ver, sizeof(ver));
+        isV2 = (ver >= 2);
+    } else {
+        f.seek(0); // V1: zurueck zum Anfang
+    }
 
     f.read((uint8_t*)&ledCount, sizeof(ledCount));
     f.read((uint8_t*)&startLedPos, sizeof(startLedPos));
@@ -2020,7 +2036,20 @@ bool loadPlayDataSlot(int slot) {
         if (nodeCount > 0 && nodeCount <= ledCount) {
             if (nodes != nullptr) delete[] nodes;
             nodes = new Node[ledCount]; 
-            f.read((uint8_t*)nodes, sizeof(Node) * nodeCount);
+            
+            if (isV2) {
+                f.read((uint8_t*)nodes, sizeof(Node) * nodeCount);
+            } else {
+                for (int i = 0; i < nodeCount; i++) {
+                    f.read((uint8_t*)&nodes[i].pos,    sizeof(nodes[i].pos));
+                    f.read((uint8_t*)&nodes[i].height, sizeof(nodes[i].height));
+                    f.read((uint8_t*)&nodes[i].type,   sizeof(nodes[i].type));
+                    f.read((uint8_t*)&nodes[i].art,    sizeof(nodes[i].art));
+                    f.read((uint8_t*)&nodes[i].force,  sizeof(nodes[i].force));
+                    f.read((uint8_t*)&nodes[i].length, sizeof(nodes[i].length));
+                    nodes[i].enabled = 1; 
+                }
+            }
         }
     }
 
@@ -2036,7 +2065,7 @@ bool loadPlayDataSlot(int slot) {
     if (f.available() >= (int)sizeof(zoneBrightness)) {
         f.read((uint8_t*)&zoneBrightness, sizeof(zoneBrightness));
     } else {
-        zoneBrightness = 25; 
+        zoneBrightness = 10; // <-- GEÄNDERT: Fallback nun auf 10
     }
 
     if (f.available() >= (int)sizeof(displayFps)) {
@@ -2050,7 +2079,6 @@ bool loadPlayDataSlot(int slot) {
     strip.updateLength(ledCount);
     return true;
 }
-
 
 // ==========================================
 // ABSPIELEN
@@ -2070,6 +2098,7 @@ void moveLED() {
 
     if (!initialized) {
         pos = 0.0f; vel = 0.5f;  
+        maxReachedSpeed = vel; // <-- NEU: Reset beim Start
         lastTime = millis(); currentSegment = 0;
         initialized = true;
     }
@@ -2106,7 +2135,7 @@ void moveLED() {
             float pixelRunDist = p_k;
             
             for (int i = 0; i < nodeCount; i++) {
-                if (nodes[i].art == 5) { // Lift
+                if (nodes[i].art == 5 && nodes[i].enabled) { // Lift (nur wenn aktiv)
                     float nodeRunDist = (nodes[i].pos >= startLedPos) ? (nodes[i].pos - startLedPos) : ((ledCount - startLedPos) + nodes[i].pos);
                     float zoneDist = pixelRunDist - nodeRunDist;
                     if (zoneDist < 0.0f) zoneDist += ledCount; 
@@ -2139,7 +2168,7 @@ void moveLED() {
             float noseRunDist = pos;
 
             for (int i = 0; i < nodeCount; i++) {
-                if (nodes[i].art == 6 || nodes[i].art == 7) {
+                if ((nodes[i].art == 6 || nodes[i].art == 7) && nodes[i].enabled) {
                     float nodeRunDist = (nodes[i].pos >= startLedPos) ? (nodes[i].pos - startLedPos) : ((ledCount - startLedPos) + nodes[i].pos);
                     float zoneDist = noseRunDist - nodeRunDist;
                     if (zoneDist < 0.0f) zoneDist += ledCount;
@@ -2155,8 +2184,10 @@ void moveLED() {
                                     braking = true;
                                     brakeTarget = targetVel;
                                 }
+                                trackStatus = "BREMSEN";
+                            } else {
+                                trackStatus = "FREIE FAHRT"; 
                             }
-                            trackStatus = "BREMSEN";
                         } else if (nodes[i].art == 7) { // BOOSTER
                             acc_total += nodes[i].force; 
                             trackStatus = "BOOSTER";
@@ -2171,6 +2202,8 @@ void moveLED() {
 
         if (braking && vel < brakeTarget) vel = brakeTarget;
         if (vel < 0.02f) vel = 0.02f; 
+
+        if (vel > maxReachedSpeed) maxReachedSpeed = vel; // <-- NEU: Erfassen der Höchstgeschwindigkeit
 
         pos += vel * dt;
         
@@ -2192,6 +2225,16 @@ void moveLED() {
                     if(nodes[i].art == 5)      { zr=0;   zg=100; zb=255; }
                     else if(nodes[i].art == 6) { zr=255; zg=50;  zb=0;   }
                     else if(nodes[i].art == 7) { zr=255; zg=255; zb=0;   }
+
+                    // Deaktivierte Zonen: nur sehr schwaches Glimmen, kein Animations-Effekt
+                    if (!nodes[i].enabled) {
+                        uint16_t dimBright = zoneBrightness / 5;
+                        for (uint16_t l = 0; l < nodes[i].length; l++) {
+                            uint16_t zPos = (nodes[i].pos + l) % ledCount;
+                            strip.setPixelColor(zPos, strip.Color((zr * dimBright)/255, (zg * dimBright)/255, (zb * dimBright)/255));
+                        }
+                        continue;
+                    }
 
                     if (showZoneEffects == 1) { 
                         for (uint16_t l = 0; l < nodes[i].length; l++) {
@@ -2253,7 +2296,7 @@ void moveLED() {
         
         // --- 5. DISPLAY-TELEMETRIE ---
         int currentLedPos = ((int)pos + startLedPos) % ledCount;
-        unsigned long refreshInterval = 1000 / displayFps; // 
+        unsigned long refreshInterval = 1000 / displayFps;
         
         if (now - lastDisplayUpdate >= refreshInterval) {
             drawTelemetry(currentLedPos, vel, acc_total, trackStatus);
