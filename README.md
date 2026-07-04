@@ -15,7 +15,7 @@ Hier findet ihr die Daten für den 3D-Druck und den Arduino-Code.
 Der vollständige Artikel zum Projekt steht in der **[Make-Ausgabe 2/26](https://www.heise.de/select/make/2026/2)**.
 
 ---
-# Infos aus dem FORK
+# Infos aus dem FORK<>
 
 ## geplante Features
 - Anbindung von DFPlayer für AudioEffekte
