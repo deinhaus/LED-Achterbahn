@@ -388,7 +388,17 @@ void setup() {
 
     // NEU: DFPlayer initialisieren
     dfpSerial.begin(9600, SERIAL_8N1, DFP_RX_PIN, DFP_TX_PIN);
-    delay(200); // DFPlayer braucht kurz Zeit nach Power-On
+    delay(1000); // DFPlayer braucht kurz Zeit nach Power-On
+    
+    // GEÄNDERT: bis zu 3 Versuche, ACK-Check aus (Clone-kompatibel), Reset an
+    for (int attempt = 1; attempt <= 3 && !dfpReady; attempt++) {
+        if (dfPlayer.begin(dfpSerial, /*isACK=*/false, /*doReset=*/true)) {
+            dfpReady = true;
+        } else {
+            Serial.print(F("DFPlayer Versuch ")); Serial.print(attempt); Serial.println(F(" fehlgeschlagen..."));
+            delay(500);
+        }
+    }
 
     if (dfPlayer.begin(dfpSerial)) {
         dfpReady = true;
