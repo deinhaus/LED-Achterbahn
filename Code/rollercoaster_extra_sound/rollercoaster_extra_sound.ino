@@ -403,9 +403,14 @@ void setup() {
     if (dfPlayer.begin(dfpSerial)) {
         dfpReady = true;
         dfPlayer.volume(soundVolume);
-        delay(100);
+        delay(500);  // GEÄNDERT: mehr Zeit nach Reset
+
+        // GEÄNDERT: zweimal abfragen, erster Wert ist oft ungueltig
         randomFolderCount = dfPlayer.readFileCountsInFolder(RANDOM_FOLDER);
-        if (randomFolderCount < 0) randomFolderCount = 0;  // Manche Clones liefern -1
+        delay(200);
+        int secondRead = dfPlayer.readFileCountsInFolder(RANDOM_FOLDER);
+        if (secondRead > 0) randomFolderCount = secondRead;
+        if (randomFolderCount < 0) randomFolderCount = 0;
         Serial.print(F("DFPlayer bereit. Random-Tracks: "));
         Serial.println(randomFolderCount);
     } else {
