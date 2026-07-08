@@ -29,6 +29,7 @@ bool dfpReady = false;             // Merker: Player erfolgreich initialisiert?
 uint8_t soundVolume = 20;          // Lautstärke 0-30
 uint8_t soundEnabled = 1;          // 0 = Aus, 1 = An
 uint8_t soundMode = 0;             // 0 = Effekte (Status-Sounds), 1 = Random (Zufallswiedergabe)
+uint8_t effectLoopTrack = 0;   // NEU: Track, der im Modus "Nur Effekte" geloopt wird (0 = keiner)
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
@@ -85,20 +86,27 @@ uint16_t segmentCount = 0;
 #define SND_BOOSTER   2
 #define SND_BRAKE     3
 #define SND_RIDE      4
+#define SND_THEME     4   
 #define SND_START     5
+#define ADV_LIFT      1    // NEU: Einwuerfe in /ADVERT
+#define ADV_BOOSTER   2
+#define ADV_BRAKE     3
+#define ADV_START     4    // Welcome-Jingle als Einwurf
 #define RANDOM_FOLDER 2 // Ordner "02" auf der SD-Karte
+
+bool themeRunning = false;  // NEU: Laeuft der Theme-Loop?
 
 String lastSoundStatus = "";   // Zuletzt vertonter Status
 static unsigned long lastSoundCmd = 0;
 int randomFolderCount = 0;       // Anzahl Dateien im Random-Ordner (wird im Setup ermittelt)
 bool randomModeActive = false;   // Läuft gerade die Random-Wiedergabe?
 
-void playSound(uint8_t track, bool loopIt = false) {
-    if (!dfpReady || !soundEnabled) return;
-    if (loopIt) dfPlayer.loopFolder(0);  // Vorsichtshalber Loop beenden... 
-    if (loopIt) dfPlayer.loop(track);    // ...und Track als Endlosschleife starten
-    else        dfPlayer.playMp3Folder(track);
-}
+//void playSound(uint8_t track, bool loopIt = false) {
+//    if (!dfpReady || !soundEnabled) return;
+//    if (loopIt) dfPlayer.loopFolder(0);  // Vorsichtshalber Loop beenden... 
+//    if (loopIt) dfPlayer.loop(track);    // ...und Track als Endlosschleife starten
+//    else        dfPlayer.playMp3Folder(track);
+//}
 
 void playRandomSound() {
     if (!dfpReady || !soundEnabled || randomFolderCount <= 0) return;
@@ -109,7 +117,10 @@ void playRandomSound() {
 
 void stopSound() {
     if (!dfpReady) return;
-    randomModeActive = false;   // NEU
+    randomModeActive = false;
+    themeRunning = false;
+    effectLoopTrack = 0;   // NEU
+    dfPlayer.disableLoop();   // NEU
     dfPlayer.stop();
     lastSoundStatus = "";
 }
@@ -118,8 +129,7 @@ void stopSound() {
 void updateSound(String status) {
     if (!dfpReady || !soundEnabled) return;
 
-    // NEU: Random-Modus - Status ist egal, einfach Zufallswiedergabe laufen lassen
-    if (soundMode == 1) {
+    if (soundMode == 1) {   // RANDOM
         if (!randomModeActive && randomFolderCount > 0) {
             randomModeActive = true;
             playRandomSound();
@@ -127,29 +137,32 @@ void updateSound(String status) {
         return;
     }
 
-    // Effekte-Modus (wie bisher)
-    if (status == lastSoundStatus) return;
+    if (soundMode == 2) return;   // NEU: NUR THEME - Status ist egal, Theme laeuft einfach
+
+    // Kategorie bilden (fuer Modus 0 und 3)
+    String cat;
+    if (status == "KETTENLIFT")   cat = "LIFT";
+    else if (status == "BOOSTER") cat = "BOOST";
+    else if (status == "BREMSEN") cat = "BRAKE";
+    else                          cat = "RIDE";
+
+    if (cat == lastSoundStatus) return;
     if (millis() - lastSoundCmd < 150) return;
     lastSoundCmd = millis();
-    lastSoundStatus = status;
+    String prevCat = lastSoundStatus;
+    lastSoundStatus = cat;
 
-    if (status == "KETTENLIFT") {
-        randomModeActive = false;
-        dfPlayer.loop(SND_LIFT);
-    } else if (status == "BOOSTER") {
-        randomModeActive = false;
-        dfPlayer.playMp3Folder(SND_BOOSTER);
-    } else if (status == "BREMSEN") {
-        randomModeActive = false;
-        dfPlayer.playMp3Folder(SND_BRAKE);
-    } else { // FREIE FAHRT & AUSROLLEN
-        if (randomFolderCount > 0) {
-            randomModeActive = true;
-            playRandomSound();
-        } else {
-            randomModeActive = false;
-            dfPlayer.loop(SND_RIDE);
-        }
+    if (soundMode == 0) {   // THEME+FX: Einwuerfe per Advertise
+        if (cat == "LIFT")       dfPlayer.advertise(ADV_LIFT);
+        else if (cat == "BOOST") dfPlayer.advertise(ADV_BOOSTER);
+        else if (cat == "BRAKE") dfPlayer.advertise(ADV_BRAKE);
+        else if (prevCat == "LIFT") dfPlayer.stopAdvertise();
+    }
+    else {                  // NEU - NUR EFFEKTE: normale Tracks, Stille dazwischen
+        if (cat == "LIFT")       { effectLoopTrack = SND_LIFT; dfPlayer.playMp3Folder(SND_LIFT); }
+        else if (cat == "BOOST") { effectLoopTrack = 0; dfPlayer.playMp3Folder(SND_BOOSTER); }
+        else if (cat == "BRAKE") { effectLoopTrack = 0; dfPlayer.playMp3Folder(SND_BRAKE); }
+        else                     { effectLoopTrack = 0; dfPlayer.stop(); }   // RIDE = Stille
     }
 }
 
@@ -400,12 +413,9 @@ void setup() {
         }
     }
 
-    if (dfPlayer.begin(dfpSerial)) {
-        dfpReady = true;
+    if (dfpReady) {                              // GEÄNDERT: kein zweites begin() mehr!
         dfPlayer.volume(soundVolume);
-        delay(500);  // GEÄNDERT: mehr Zeit nach Reset
-
-        // GEÄNDERT: zweimal abfragen, erster Wert ist oft ungueltig
+        delay(500);
         randomFolderCount = dfPlayer.readFileCountsInFolder(RANDOM_FOLDER);
         delay(200);
         int secondRead = dfPlayer.readFileCountsInFolder(RANDOM_FOLDER);
@@ -624,7 +634,7 @@ void loop() {
         else if (opticsMenuSelection == 9) { uiState = ST_OPTICS_GFORCE_SCALE; encoder.setPosition((int)(gForceScale * 100.0f)); } 
         else if (opticsMenuSelection == 10) { uiState = ST_OPTICS_ZONE_EFFECTS; encoder.setPosition(showZoneEffects); }
         else if (opticsMenuSelection == 11) { uiState = ST_OPTICS_SOUND_VOLUME; encoder.setPosition(soundVolume); 
-                                              if (dfpReady && soundEnabled) dfPlayer.loop(SND_RIDE);}  // Hörprobe     // NEU
+                                              if (dfpReady && soundEnabled) dfPlayer.playMp3Folder(SND_THEME);}  // Hörprobe     // NEU
         else if (opticsMenuSelection == 12) { uiState = ST_OPTICS_SOUND_ENABLED; encoder.setPosition(soundEnabled); }   // NEU
         else if (opticsMenuSelection == 13) { uiState = ST_OPTICS_SOUND_MODE; encoder.setPosition(soundMode); }      // NEU
         else if (opticsMenuSelection == 14) { uiState = ST_MENU; encoder.setPosition(1); savePlayDataSlot(activeLoadedSlot); }
@@ -759,7 +769,7 @@ void loop() {
     case ST_OPTICS_SOUND_MODE:
       if (newPos != lastPos) {
         if (newPos < 0) { encoder.setPosition(0); newPos = 0; }
-        if (newPos > 1) { encoder.setPosition(1); newPos = 1; }
+        if (newPos > 3) { encoder.setPosition(3); newPos = 3; }   // GEÄNDERT: 3 statt 1
         soundMode = newPos;
         drawSoundModeSelection(); lastPos = newPos;
       }
@@ -1330,7 +1340,7 @@ void drawOpticsMenu() {
             case 10: display.print(F("Zonen:   ")); display.println(showZoneEffects == 0 ? "Aus" : (showZoneEffects == 1 ? "Statisch" : "Lauflicht")); break;
             case 11: display.print(F("Sound-V: ")); display.println(soundVolume); break;                        // NEU
             case 12: display.print(F("Sound:   ")); display.println(soundEnabled ? "An" : "Aus"); break;        // NEU
-            case 13: display.print(F("S-Modus: ")); display.println(soundMode == 0 ? "Effekte" : "Random"); break;  // NEU
+            case 13: display.print(F("S-Modus: ")); display.println(soundMode == 0 ? "Theme+FX" : (soundMode == 1 ? "Random" : (soundMode == 2 ? "Theme" : "Effekte"))); break;
             case 14: display.println(F("ZURUECK")); break;                                                      // GEÄNDERT
         }
     }
@@ -1765,7 +1775,10 @@ void drawSoundModeSelection() {
     display.clearDisplay(); display.setTextSize(1); display.setTextColor(SH110X_WHITE);
     display.setCursor(0, 0); display.println(F("SOUND-MODUS:"));
     display.setTextSize(2); display.setCursor(10, 25);
-    display.println(soundMode == 0 ? F("Effekte") : F("Random"));
+    if (soundMode == 0)      display.println(F("Theme+FX"));
+    else if (soundMode == 1) display.println(F("Random"));
+    else if (soundMode == 2) display.println(F("Theme"));
+    else                     display.println(F("Effekte"));
     display.setTextSize(1); display.setCursor(0, 50);
     if (soundMode == 1 && randomFolderCount == 0) display.println(F("Ordner 02 ist leer!"));
     display.display();
@@ -2371,7 +2384,7 @@ bool loadPlayDataSlot(int slot) {
     // NEU (V6): Sound-Modus laden
     if (f.available() >= (int)sizeof(soundMode)) {
         f.read((uint8_t*)&soundMode, sizeof(soundMode));
-        if (soundMode > 1) soundMode = 0;
+        if (soundMode > 3) soundMode = 0;
     } else {
         soundMode = 0;
     }
@@ -2415,10 +2428,22 @@ void moveLED() {
         minGForce = 1.0f;
         lastTime = millis(); currentSegment = 0;
         initialized = true;
-        lastSoundStatus = "";              // NEU
-        randomModeActive = false;          // NEU: sauberer Start
-        // playSound(SND_START);              // Start-Jingle
-        if (soundMode == 0) playSound(SND_START);   // Jingle nur im Effekte-Modus
+        lastSoundStatus = "";
+        randomModeActive = false;
+        effectLoopTrack = 0;
+        themeRunning = false;
+        if (dfpReady && soundEnabled) {
+            if (soundMode == 0 || soundMode == 2) {
+                dfPlayer.playMp3Folder(SND_THEME);       // Theme sofort starten...
+                themeRunning = true;
+                //delay(150);                              // ...kurz anlaufen lassen...
+                //dfPlayer.advertise(ADV_START);           // ...Welcome drueberlegen
+            }
+            else if (soundMode == 3) {
+                dfPlayer.playMp3Folder(SND_START);       // Effekte-Modus: Jingle normal spielen
+            }
+            // Modus 1 (Random): kein Jingle, die Playlist startet direkt via updateSound()
+        }
     }
     
     unsigned long now = millis();
@@ -2519,10 +2544,19 @@ void moveLED() {
         // NEU: Sound passend zum Streckenstatus
         updateSound(trackStatus);
         // NEU: Random-Wiedergabe - naechsten Track starten wenn der aktuelle fertig ist
-        if (randomModeActive && dfPlayer.available()) {
+         if (dfpReady && dfPlayer.available()) {
             uint8_t type = dfPlayer.readType();
-            if (type == DFPlayerPlayFinished) {
-                playRandomSound();
+            if (type == DFPlayerPlayFinished && millis() - lastSoundCmd > 300) {
+                if (randomModeActive) {
+                    playRandomSound();
+                    randomModeActive = true;
+                } else if (effectLoopTrack > 0) {              // NEU: Lift-Loop in Modus 3
+                    dfPlayer.playMp3Folder(effectLoopTrack);
+                    lastSoundCmd = millis();
+                } else if (themeRunning) {
+                    dfPlayer.playMp3Folder(SND_THEME);
+                    lastSoundCmd = millis();
+                }
             }
         }
 
