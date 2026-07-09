@@ -365,7 +365,7 @@ struct Node {
 | Ordner wird als leer gemeldet, Abspielen geht aber | Clone-Chip (z.B. GD3200B, MH2024K) – `readFileCountsInFolder()` defekt | Original YX5200 verwenden oder Track-Anzahl fest im Code hinterlegen |
 | Spontanes Abspielen beim Einschalten | Clone-Chip mit Auto-Play oder freischwebende ADKEY/IO-Pins | Original verwenden; rechte Pin-Reihe freihalten |
 | Brummen, das lauter wird und mit Knacken endet | Verstärker schwingt in der Boot-Phase auf verrauschter Versorgung | LED-Streifen an eigenes Netzteil, Elko an den Player, 1-kΩ-Widerstand |
-| Brummen/Kratzen im Betrieb, System friert ein | LED-Streifen und Player teilen sich die USB-Versorgung | **Separates Netzteil für die LEDs** – wichtigste Einzelmaßnahme! |
+| Brummen/Kratzen im Betrieb, System friert ein | LED-Streifen und Player teilen sich die USB-Versorgung | **Separates Netzteil für die LEDs** – wichtigste Einzelmaßnahme!  Ich versorge alles mit einem 5V/5A Netzteil, über USB kann der Strom ggf nicht genügen, wenn zu viele LEDs gleichzeitig oder zu hell leuchten. |
 | `stop()` oder andere Befehle hängen | Bibliothek wartet auf ACK-Antwort, Rückleitung (Player-TX) gestört | `begin(..., /*isACK=*/false, ...)` verwenden, TX-Leitung prüfen |
 | Sounds brechen ab, neuer Track startet mitten drin | Sound-Logik reagiert auf jeden Statuswechsel | Im aktuellen Code behoben (Kategorie-Abbildung) |
 | Alte Einstellungen überleben den Neustart | Elko hält den Player nach dem Ausstecken am Leben | 10–15 Sekunden stromlos lassen |
