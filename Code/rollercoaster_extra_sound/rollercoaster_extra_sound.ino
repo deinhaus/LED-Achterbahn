@@ -26,7 +26,7 @@ DFRobotDFPlayerMini dfPlayer;
 bool dfpReady = false;             // Merker: Player erfolgreich initialisiert?
 
 // NEU: Sound-Einstellungen
-uint8_t soundVolume = 20;          // Lautstärke 0-30
+uint8_t soundVolume = 10;          // Lautstärke 0-30
 uint8_t soundEnabled = 1;          // 0 = Aus, 1 = An
 uint8_t soundMode = 0;             // 0 = Effekte (Status-Sounds), 1 = Random (Zufallswiedergabe)
 uint8_t effectLoopTrack = 0;   // NEU: Track, der im Modus "Nur Effekte" geloopt wird (0 = keiner)
@@ -744,7 +744,7 @@ void loop() {
     case ST_OPTICS_SOUND_VOLUME:
       if (newPos != lastPos) {
         if (newPos < 0) { encoder.setPosition(0); newPos = 0; }
-        if (newPos > 30) { encoder.setPosition(30); newPos = 30; }
+        if (newPos > 20) { encoder.setPosition(20); newPos = 20; }
         soundVolume = newPos;
         if (dfpReady) dfPlayer.volume(soundVolume);
         drawSoundVolumeSelection(); lastPos = newPos;
