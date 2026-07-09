@@ -35,7 +35,7 @@ Im Konfig-Menü ist jetzt ein Faktor konfigurierbar, der den angezeigten Wert n%
 ![Display](https://img.shields.io/badge/Display-SH1106-lightgrey)
 ![LEDs](https://img.shields.io/badge/LEDs-WS2812B-green)
 ![Sound](https://img.shields.io/badge/Sound-DFPlayer%20Mini-orange)
-![Status](https://img.shields.io/badge/Status-Active-success)
+![Status](https://img.shields.io/badge/Status-Feature%20Complete-blue)
 
 ---
 
