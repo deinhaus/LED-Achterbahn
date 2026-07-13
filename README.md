@@ -157,8 +157,8 @@ Der 1-kΩ-Widerstand dämpft den Pegelunterschied zwischen dem 3,3-V-Signal des 
 ⚠️ **Der häufigste Fehler beim Nachbau:** LED-Streifen und Sound gemeinsam am USB-Port betreiben. Die Folge sind Brummen aus dem Lautsprecher, abgehackte Sounds, Ruckler und komplette Systemabstürze, die nur ein Kaltstart behebt.
 
 Regeln für einen stabilen Betrieb:
-- **LED-Streifen zwingend an ein eigenes 5-V-Netzteil**, niemals über USB versorgen.
-- Bei 1000 LEDs den Strom an **mehreren Punkten** einspeisen (Anfang, Mitte, Ende), Kabelquerschnitt mind. 1,5 mm².
+- **LED-Streifen zwingend an ein ausreichend dimensioniertes 5-V-Netzteil**, niemals inkl. Sound über USB versorgen.
+- Bei 1000 LEDs den Strom an **mehreren Punkten** einspeisen (Anfang, Mitte, Ende).
 - **Elko 470–1000 µF direkt an VCC/GND des DFPlayer** (Polung beachten: Minus-Streifen an GND). Puffert die Stromspitzen des 3-W-Verstärkers.
 - **Alle Massen verbinden** (Netzteil, ESP32, DFPlayer, LED-Streifen), sternförmig zum Netzteil geführt – nicht als lange Kette.
 - Der ESP32 selbst kann am USB bleiben (praktisch zum Flashen), der DFPlayer sollte mit eigener Zuleitung ans Netzteil.
